@@ -25,39 +25,34 @@ def inRegion(c1, c2, roi):
     return False
 
 
+def getRoi(videoPath):
+    cap = cv2.VideoCapture(videoPath)
+    ret, frame = cap.read()
+    xmin, ymin, w, h = cv2.selectROI("Display", frame, False)
+    drawn_roi = [xmin, ymin, xmin + w, ymin + h]
+    cap.release()
+    cv2.destroyAllWindows()
+
+    return drawn_roi
+
+
 def main():
     print("Programm Starting")
 
     videoPath = 'new-3_Trim_1.mp4'
-
     cv2.namedWindow("Display", cv2.WINDOW_NORMAL)
     cv2.resizeWindow("Display", 1024, 640)
 
-    cap = cv2.VideoCapture(videoPath)
-    ret, frame = cap.read()
-    bbox = cv2.selectROI("Display", frame, False)
-    xmin, ymin, w, h = bbox
-    xmax = xmin + w
-    ymax = ymin + h
-    drawn_roi = [xmin, ymin, xmax, ymax]
-    cap.release()
-    cv2.destroyAllWindows()
+    drawn_roi = getRoi(videoPath)
+    xmin, ymin, xmax, ymax = drawn_roi
 
     occupancyTime = 0
 
     prev_frame_time = 0
     new_frame_time = 0
-    half = False
-    classify = False
     imgsz = 640
     augment = False
-    conf_thres = 0.50,  # confidence threshold
-    iou_thres = 0.45,
-    agnostic_nms = False,  # class-agnostic NMS
     max_det = 1000
-    hide_labels = False,  # hide labels
-    hide_conf = False,
-    classes = None
     device = select_device('cpu')
     model = attempt_load(
         'cabin_model.pt', map_location=device)  # load FP32 model
@@ -76,35 +71,35 @@ def main():
     for path, img, im0s, vid_cap in dataset:
         frame_rate = vid_cap.get(cv2.CAP_PROP_FPS)
         t1 = time_sync()
+
         new_frame_time = time.time()
         img = torch.from_numpy(img).to(device)
-        # print(type(img))
-        img = img.half() if half else img.float()  # uint8 to fp16/32
-
         img = img / 255.0  # 0 - 255 to 0.0 - 1.0
         if len(img.shape) == 3:
             img = img[None]  # expand for batch dim
+
         t2 = time_sync()
         dt[0] += t2 - t1
         pred = model(img, augment=augment, visualize=False)[0]
+
         t3 = time_sync()
         dt[1] += t3 - t2
+
         # NMS
         pred = non_max_suppression(
             pred, 0.50, 0.45, None, False, max_det=max_det)
-        # print(pred)
         dt[2] += time_sync() - t3
 
         for i, det in enumerate(pred):  # per image
-            # print(i)
-            # print(det)
             c1 = None
             seen += 1
             p, s, im0, frame = path, '', im0s.copy(), getattr(dataset, 'frame', 0)
+
             # normalization gain whwh
             gn = torch.tensor(im0.shape)[[1, 0, 1, 0]]
             annotator = Annotator(im0, line_width=3, pil=not ascii)
             if len(det):
+
                 # Rescale boxes from img_size to im0 size
                 det[:, :4] = scale_coords(
                     img.shape[2:], det[:, :4], im0.shape).round()

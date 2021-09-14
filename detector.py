@@ -40,13 +40,15 @@ if half:
     model.half()  # to FP16
 if classify:  # second-stage classifier
     modelc = load_classifier(name='resnet50', n=2)  # initialize
-    modelc.load_state_dict(torch.load('resnet50.pt', map_location=device)['model']).to(device).eval()
+    modelc.load_state_dict(torch.load('resnet50.pt', map_location=device)[
+                           'model']).to(device).eval()
 imgsz = check_img_size(imgsz, s=stride)  # check image size
 ascii = is_ascii(names)
 
 dt, seen = [0.0, 0.0, 0.0], 0
 
-dataset = LoadImages('new-3_Trim.mp4', img_size=imgsz, stride=stride, auto='.pt')
+dataset = LoadImages('new-3_Trim.mp4', img_size=imgsz,
+                     stride=stride, auto='.pt')
 bs = 1  # batch_size
 vid_path, vid_writer = [None] * bs, [None] * bs
 for path, img, im0s, vid_cap in dataset:
@@ -78,7 +80,8 @@ for path, img, im0s, vid_cap in dataset:
         annotator = Annotator(im0, line_width=3, pil=not ascii)
         if len(det):
             # Rescale boxes from img_size to im0 size
-            det[:, :4] = scale_coords(img.shape[2:], det[:, :4], im0.shape).round()
+            det[:, :4] = scale_coords(
+                img.shape[2:], det[:, :4], im0.shape).round()
 
             # Print results
             for c in det[:, -1].unique():

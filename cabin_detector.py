@@ -39,13 +39,14 @@ def getRoi(videoPath):
 def main():
     print("Programm Starting")
 
-    videoPath = 'new-3_Trim_1.mp4'
+    videoPath = './videos/workerlm2.mp4'
     cv2.namedWindow("Display", cv2.WINDOW_NORMAL)
     cv2.resizeWindow("Display", 1024, 640)
 
     drawn_roi = getRoi(videoPath)
     xmin, ymin, xmax, ymax = drawn_roi
-
+    print(drawn_roi)
+    return
     occupancyTime = 0
 
     prev_frame_time = 0

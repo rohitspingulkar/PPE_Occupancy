@@ -63,7 +63,8 @@ class VideoReader(object):
 
         self.webcam = self.streamLink.isnumeric() or self.streamLink.endswith('.txt') or self.streamLink.lower().startswith(
             ('rtsp://', 'rtmp://', 'http://', 'https://'))
-        print(self.webcam)
+
+        self.state = False
         self.rois = streamArg["rois"]
         self.drawn_roi = self.rois
         self.occupancyTime = [0] * len(self.rois)
@@ -89,107 +90,123 @@ class VideoReader(object):
             self.dataset = LoadStreams(
                 self.streamLink, img_size=self.imgsz, stride=self.stride, auto='.pt')
             bs = len(self.dataset)  # batch_size
+            self.state = True
         else:
             self.dataset = LoadImages(self.streamLink, img_size=self.imgsz,
                                       stride=self.stride, auto='.pt')
 
-    def process(self):
+        self.frame_queue = []
 
+    def run(self):
+        pass
+
+    def show_frame(self):
+        while self.state:
+            if len(self.frame_queue) == 0:
+                continue
+            else:
+                cv2.imshow(self.frame_queue.pop(0))
+
+    def process(self):
         prev_frame_time = 0
         new_frame_time = 0
-
+        frame_count = 0
         for path, img, im0s, vid_cap in self.dataset:
-            frame_rate = self.dataset.fps
-            t1 = time_sync()
+            frame_count += 1
+            if frame_count == 20:
+                frame_count = 0
+                continue
+            else:
+                frame_rate = self.dataset.fps
+                t1 = time_sync()
 
-            new_frame_time = time.time()
-            img = torch.from_numpy(img).to(self.processing_device)
-            img = img / 255.0  # 0 - 255 to 0.0 - 1.0
-            if len(img.shape) == 3:
-                img = img[None]  # expand for batch dim
+                new_frame_time = time.time()
+                img = torch.from_numpy(img).to(self.processing_device)
+                img = img / 255.0  # 0 - 255 to 0.0 - 1.0
+                if len(img.shape) == 3:
+                    img = img[None]  # expand for batch dim
 
-            t2 = time_sync()
-            self.dt[0] += t2 - t1
-            pred = self.model(img, augment=False, visualize=False)[0]
+                t2 = time_sync()
+                self.dt[0] += t2 - t1
+                pred = self.model(img, augment=False, visualize=False)[0]
 
-            t3 = time_sync()
-            self.dt[1] += t3 - t2
+                t3 = time_sync()
+                self.dt[1] += t3 - t2
 
-            self.roi_kit_label = [None] * len(self.rois)
-            # NMS
-            pred = non_max_suppression(
-                pred, 0.50, 0.45, None, False, max_det=self.max_det)
-            self.dt[2] += time_sync() - t3
+                self.roi_kit_label = [None] * len(self.rois)
+                # NMS
+                pred = non_max_suppression(
+                    pred, 0.50, 0.45, None, False, max_det=self.max_det)
+                self.dt[2] += time_sync() - t3
 
-            for i, det in enumerate(pred):  # per image
-                c1 = None
-                self.seen += 1
-                if self.webcam:  # batch_size >= 1
-                    p, s, im0, frame = path[i], f'{i}: ', im0s[i].copy(
-                    ), self.dataset.count
-                else:
-                    p, s, im0, frame = path, '', im0s.copy(), getattr(self.dataset, 'frame', 0)
+                for i, det in enumerate(pred):  # per image
+                    c1 = None
+                    self.seen += 1
+                    if self.webcam:  # batch_size >= 1
+                        p, s, im0, frame = path[i], f'{i}: ', im0s[i].copy(
+                        ), self.dataset.count
+                    else:
+                        p, s, im0, frame = path, '', im0s.copy(), getattr(self.dataset, 'frame', 0)
 
-                # normalization gain whwh
-                gn = torch.tensor(im0.shape)[[1, 0, 1, 0]]
-                annotator = Annotator(im0, line_width=3, pil=not ascii)
-                if len(det):
+                    # normalization gain whwh
+                    gn = torch.tensor(im0.shape)[[1, 0, 1, 0]]
+                    annotator = Annotator(im0, line_width=3, pil=not ascii)
+                    if len(det):
 
-                    # Rescale boxes from img_size to im0 size
-                    det[:, :4] = scale_coords(
-                        img.shape[2:], det[:, :4], im0.shape).round()
+                        # Rescale boxes from img_size to im0 size
+                        det[:, :4] = scale_coords(
+                            img.shape[2:], det[:, :4], im0.shape).round()
 
-                    # Print results
-                    for c in det[:, -1].unique():
-                        n = (det[:, -1] == c).sum()  # detections per class
-                        # add to string
-                        s += f"{n} {self.names[int(c)]}{'s' * (n > 1)}, "
+                        # Print results
+                        for c in det[:, -1].unique():
+                            n = (det[:, -1] == c).sum()  # detections per class
+                            # add to string
+                            s += f"{n} {self.names[int(c)]}{'s' * (n > 1)}, "
 
-                    for *xyxy, conf, cls in reversed(det):
-                        c = int(cls)  # integer class
-                        c1, c2 = (int(xyxy[0]), int(xyxy[1])
-                                  ), (int(xyxy[2]), int(xyxy[3]))
+                        for *xyxy, conf, cls in reversed(det):
+                            c = int(cls)  # integer class
+                            c1, c2 = (int(xyxy[0]), int(xyxy[1])
+                                      ), (int(xyxy[2]), int(xyxy[3]))
 
-                        roi_index = inRegion(c1, c2, self.drawn_roi)
+                            roi_index = inRegion(c1, c2, self.drawn_roi)
 
-                        if roi_index != None:
-                            self.occupancyTime[roi_index] += 1/frame_rate
-                            self.roi_kit_label[roi_index] = self.names[c]
+                            if roi_index != None:
+                                self.occupancyTime[roi_index] += 1/frame_rate
+                                self.roi_kit_label[roi_index] = self.names[c]
 
-                        label = f'{self.names[c]} {conf:.2f}'
-                        annotator.box_label(xyxy, label, color=colors(c, True))
-                print(f'{s}Done. ({t3 - t2:.3f}s)')
+                            label = f'{self.names[c]} {conf:.2f}'
+                            annotator.box_label(
+                                xyxy, label, color=colors(c, True))
+                    print(f'{s}Done. ({t3 - t2:.3f}s)')
 
-                im0 = annotator.result()
-                font = cv2.FONT_HERSHEY_SIMPLEX
-                for i in range(len(self.drawn_roi)):
-                    xmin, ymin, xmax, ymax = self.drawn_roi[i]
-                    cv2.putText(im0, f"Roi: {i}", (xmin + 10, ymin - 50), font, 2,
-                                (255, 255, 255), 3, cv2.LINE_AA)
+                    im0 = annotator.result()
+                    font = cv2.FONT_HERSHEY_SIMPLEX
+                    for i in range(len(self.drawn_roi)):
+                        xmin, ymin, xmax, ymax = self.drawn_roi[i]
+                        cv2.putText(im0, f"Roi: {i}", (xmin + 10, ymin - 50), font, 2,
+                                    (255, 255, 255), 3, cv2.LINE_AA)
 
-                    cv2.rectangle(im0, (xmin, ymin),
-                                  (xmax, ymax), (255, 255, 255), 1)
+                        cv2.rectangle(im0, (xmin, ymin),
+                                      (xmax, ymax), (255, 255, 255), 1)
 
-                    cv2.putText(im0, str(round(self.occupancyTime[i], 2)), (xmin + 10, ymin + 50), font, 2,
-                                (100, 255, 0), 3, cv2.LINE_AA)
-                    try:
-                        cv2.putText(im0, self.roi_kit_label[i], (xmin + 10, ymax - 50), font, 2,
+                        cv2.putText(im0, str(round(self.occupancyTime[i], 2)), (xmin + 10, ymin + 50), font, 2,
                                     (100, 255, 0), 3, cv2.LINE_AA)
-                    except:
-                        pass
+                        try:
+                            cv2.putText(im0, self.roi_kit_label[i], (xmin + 10, ymax - 50), font, 2,
+                                        (100, 255, 0), 3, cv2.LINE_AA)
+                        except:
+                            pass
 
-                im0 = cv2.resize(im0, (620, 400))
-                fps = 1 / (new_frame_time - prev_frame_time)
-                prev_frame_time = new_frame_time
-                fps = int(fps)
-                fps = str(fps)
+            im0 = cv2.resize(im0, (620, 400))
+            fps = 1 / (new_frame_time - prev_frame_time)
+            prev_frame_time = new_frame_time
+            fps = int(fps)
+            fps = str(fps)
 
-                cv2.putText(im0, fps, (7, 70), font, 3,
-                            (100, 255, 0), 3, cv2.LINE_AA)
+            cv2.putText(im0, fps, (7, 70), font, 3,
+                        (100, 255, 0), 3, cv2.LINE_AA)
 
-                cv2.imshow(self.window, im0)
-
-                cv2.waitKey(1)
+            cv2.imshow(self.window, im0)
 
             t = tuple(x / self.seen * 1E3 for x in self.dt)
 
@@ -214,5 +231,7 @@ if __name__ == '__main__':
 
     for t in threads:
         t.join()
+
+    cv2.destroyAllWindows()
 
     sys.exit()

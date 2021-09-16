@@ -39,7 +39,8 @@ def getRoi(videoPath):
 def main():
     print("Programm Starting")
 
-    videoPath = './videos/workerlm2.mp4'
+    # videoPath = './videos/workerlm2.mp4'
+    videoPath = 2
     cv2.namedWindow("Display", cv2.WINDOW_NORMAL)
     cv2.resizeWindow("Display", 1024, 640)
 

@@ -46,9 +46,15 @@ imgsz = check_img_size(imgsz, s=stride)  # check image size
 ascii = is_ascii(names)
 
 dt, seen = [0.0, 0.0, 0.0], 0
+webcam = True
+if webcam:
+    source = "2"
+    dataset = LoadStreams(source, img_size=imgsz, stride=stride, auto='.pt')
+    bs = len(dataset)  # batch_size
+else:
+    dataset = LoadImages('videos/new-3_Trim.mp4', img_size=imgsz,
+                         stride=stride, auto='.pt')
 
-dataset = LoadImages('new-3_Trim.mp4', img_size=imgsz,
-                     stride=stride, auto='.pt')
 bs = 1  # batch_size
 vid_path, vid_writer = [None] * bs, [None] * bs
 for path, img, im0s, vid_cap in dataset:
@@ -75,7 +81,12 @@ for path, img, im0s, vid_cap in dataset:
         # print(i)
         # print(det)
         seen += 1
-        p, s, im0, frame = path, '', im0s.copy(), getattr(dataset, 'frame', 0)
+        if webcam:  # batch_size >= 1
+            p, s, im0, frame = path[i], f'{i}: ', im0s[i].copy(
+                                ), dataset.count
+        else:
+            p, s, im0, frame = path, '', im0s.copy(), getattr(dataset, 'frame', 0)
+            
         gn = torch.tensor(im0.shape)[[1, 0, 1, 0]]  # normalization gain whwh
         annotator = Annotator(im0, line_width=3, pil=not ascii)
         if len(det):
